@@ -54,7 +54,6 @@ def quantize_linear(
 
 def dequantize_linear(
     tensor: Tensor,
-    data_type: dtype,
     with_scale_and_zero: Tuple[float, int],
 ) -> Tensor:
     (s, z) = with_scale_and_zero
