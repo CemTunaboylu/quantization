@@ -1,4 +1,4 @@
-from torch import Tensor, dtype, iinfo, finfo
+from torch import Tensor, dtype, finfo
 from torch import round as t_round
 
 from typing import Tuple, Union
@@ -24,8 +24,9 @@ class Mode(Enum):
 # - typehint float or tensor : FloatOrTensor = Union[float, Tensor]
 
 
+# r = s(q-z), finds and returns s and z
 def get_scale_and_zero_for(
-    tensor: Tensor, data_type: dtype, mode: Mode
+    tensor: Tensor, data_type: dtype, mode: Mode, dim: Union[int, None] = None
 ) -> Tuple[float, int]:
     dtype_info = finfo(data_type)
     q_max = dtype_info.max
