@@ -1,32 +1,50 @@
-from torch import Tensor, dtype, iinfo
+from torch import Tensor, dtype, iinfo, finfo
 from torch import round as t_round
 
 from typing import Tuple, Union
+from enum import Enum
+
+
+class Mode(Enum):
+    SymmetricMode = True
+    AsymmetricMode = False
 
 
 # r = s(q-z), finds and returns s and z
-def get_scale_and_zero_point_for_dtype(
-    tensor: Tensor, data_type: dtype
-) -> Tuple[float, int]:
-    _dtype_info = iinfo(data_type)
-    q_min, q_max = _dtype_info.min, _dtype_info.max
-    r_min, r_max = tensor.min().item(), tensor.max().item()
-    """
+"""
     r_max = s(q_max - z)
     r_min = s(q_min - z)
     - 
     r_max - r_min = s(q_max - q_min)    
     s = (r_max - r_min) / (q_max - q_min)
-    """
-    scale: float = (r_max - r_min) / (q_max - q_min)
-
-    """
     z = r/s - q
-    """
-    zero_point: int = int(round(r_max / scale - q_max))
-    zero_point = clamp(zero_point, q_min, q_max)
+"""
+# TODO
+# - finfo + iinfo
+# - typehint float or tensor : FloatOrTensor = Union[float, Tensor]
 
-    return scale, zero_point
+
+def get_scale_and_zero_for(
+    tensor: Tensor, data_type: dtype, mode: Mode
+) -> Tuple[float, int]:
+    dtype_info = finfo(data_type)
+    q_max = dtype_info.max
+    r_max = (
+        tensor.abs().max().item()
+        if Mode.SymmetricMode == mode.value
+        else tensor.max().item()
+    )
+    zero: int = 0
+    if Mode.AsymmetricMode == mode.value:
+        r_max -= tensor.min().item()
+        q_max -= dtype_info.min
+
+    scale: float = r_max / q_max
+    if Mode.AsymmetricMode == mode.value:
+        zero = int(round(r_max / scale - q_max))
+        zero = clamp(zero, dtype_info.min, dtype_info.max)
+
+    return scale, zero
 
 
 def clamp(val, _min, _max):
@@ -36,18 +54,14 @@ def clamp(val, _min, _max):
 def quantize_linear(
     tensor: Tensor,
     data_type: dtype,
-    with_scale_and_zero: Union[Tuple[float, int], None],
+    mode: Mode,
 ) -> Tuple[Tensor, float, int]:
-    if None == with_scale_and_zero:
-        with_scale_and_zero = get_scale_and_zero_point_for_dtype(tensor, data_type)
-
+    (s, z) = get_scale_and_zero_for(tensor, data_type, mode)
     # r/s - z = q
-    (s, z) = with_scale_and_zero
-
     rounded_tensor = t_round(tensor / s - z)
 
-    _d_iinfo = iinfo(data_type)
-    d_min, d_max = _d_iinfo.min, _d_iinfo.max
+    d_info = finfo(data_type)
+    d_min, d_max = d_info.min, d_info.max
 
     return (rounded_tensor.clamp(d_min, d_max).to(data_type), s, z)
 
