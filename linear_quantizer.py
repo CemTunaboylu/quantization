@@ -2,7 +2,7 @@ from torch import Tensor, dtype, finfo, zeros
 from torch import round as t_round
 from torch import float32, int32
 
-from typing import Tuple, Union
+from typing import Callable, List, Tuple, Union
 from enum import Enum
 
 
@@ -77,12 +77,32 @@ def clamp(val, _min, _max):
     return min(max(val, _min), _max)
 
 
+quantization_strategies: List[Callable] = [
+    get_scale_and_zero_for,
+    per_channel_scale_and_zero_for,
+]
+
+FloatOrTensor = Union[float, Tensor]
+IntOrTensor = Union[int, Tensor]
+
+
 def quantize_linear(
     tensor: Tensor,
     data_type: dtype,
+    granularity: Granularity,
     mode: Mode,
-) -> Tuple[Tensor, float, int]:
-    (s, z) = get_scale_and_zero_for(tensor, data_type, mode)
+    **additional_parameters,  # dim : [0, len(tensor.shape)]
+) -> Tuple[Tensor, FloatOrTensor, IntOrTensor]:
+    get_scale_and_zero: Callable[..., Tuple[FloatOrTensor, IntOrTensor]] = (
+        quantization_strategies[granularity.value]
+    )
+
+    if Granularity.PerChannel == granularity and "dim" in additional_parameters:
+        (s, z) = get_scale_and_zero(
+            tensor, data_type, mode, additional_parameters["dim"]
+        )
+    else:
+        (s, z) = get_scale_and_zero(tensor, data_type, mode)
     # r/s - z = q
     rounded_tensor = t_round(tensor / s - z)
 
