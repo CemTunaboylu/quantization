@@ -1,5 +1,6 @@
-from torch import Tensor, dtype, finfo
+from torch import FloatTensor, IntTensor, Tensor, dtype, finfo, ones, zeros, empty
 from torch import round as t_round
+from torch import float32, int32
 
 from typing import Tuple, Union
 from enum import Enum
@@ -10,7 +11,12 @@ class Mode(Enum):
     AsymmetricMode = False
 
 
-# r = s(q-z), finds and returns s and z
+class Granularity(Enum):
+    PerTensor = 0
+    PerChannel = 1
+    # PerGroup = 2
+
+
 """
     r_max = s(q_max - z)
     r_min = s(q_min - z)
@@ -19,14 +25,32 @@ class Mode(Enum):
     s = (r_max - r_min) / (q_max - q_min)
     z = r/s - q
 """
-# TODO
-# - finfo + iinfo
-# - typehint float or tensor : FloatOrTensor = Union[float, Tensor]
+
+
+# dim -> per rows : 0, per columns : 1
+def per_channel_scale_and_zero_for(
+    tensor: Tensor, data_type: dtype, mode: Mode, dim: Union[int, None] = None
+) -> Tuple[Tensor, Tensor]:
+    shape = tensor.shape
+    if None == dim or dim >= len(shape) or dim < 0:
+        raise Exception(
+            f"dimension for channel is out of bounds, not in 0 < {dim} <= {len(shape)}"
+        )
+    zeroes = zeros(shape[dim]).to(int32)
+    scales = zeros(shape[dim]).to(float32)
+    for i in range(shape[dim]):
+        sz: Tuple[float, int] = get_scale_and_zero_for(
+            tensor.select(dim, i), data_type, mode
+        )
+        scales[i] = sz[0]
+        zeroes[i] = sz[1]
+
+    return scales, zeroes
 
 
 # r = s(q-z), finds and returns s and z
 def get_scale_and_zero_for(
-    tensor: Tensor, data_type: dtype, mode: Mode, dim: Union[int, None] = None
+    tensor: Tensor, data_type: dtype, mode: Mode
 ) -> Tuple[float, int]:
     dtype_info = finfo(data_type)
     q_max = dtype_info.max
@@ -35,12 +59,13 @@ def get_scale_and_zero_for(
         if Mode.SymmetricMode == mode.value
         else tensor.max().item()
     )
-    zero: int = 0
+    zero = 0
     if Mode.AsymmetricMode == mode.value:
         r_max -= tensor.min().item()
         q_max -= dtype_info.min
 
-    scale: float = r_max / q_max
+    scale = r_max / q_max
+
     if Mode.AsymmetricMode == mode.value:
         zero = int(round(r_max / scale - q_max))
         zero = clamp(zero, dtype_info.min, dtype_info.max)
