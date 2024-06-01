@@ -1,6 +1,7 @@
 from torch import Tensor, dtype, finfo, zeros
 from torch import round as t_round
 from torch import float32, int32
+from torch import int as t_int
 
 from typing import Callable, List, Tuple, Union
 from enum import Enum
@@ -46,6 +47,12 @@ def per_channel_scale_and_zero_for(
         zeroes[i] = sz[1]
 
     return scales, zeroes
+
+
+def get_info(data_type):
+    return (
+        iinfo(data_type) if isinstance(data_type, t_int.__class__) else finfo(data_type)
+    )
 
 
 # r = s(q-z), finds and returns s and z
