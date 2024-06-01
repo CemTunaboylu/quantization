@@ -1,4 +1,4 @@
-from torch import Tensor, dtype, finfo, zeros
+from torch import Tensor, dtype, finfo, iinfo, zeros
 from torch import round as t_round
 from torch import float32, int32
 from torch import int as t_int
@@ -59,7 +59,7 @@ def get_info(data_type):
 def get_scale_and_zero_for(
     tensor: Tensor, data_type: dtype, mode: Mode
 ) -> Tuple[float, int]:
-    dtype_info = finfo(data_type)
+    dtype_info = get_info(data_type)
     q_max = dtype_info.max
     r_max = (
         tensor.abs().max().item()
@@ -105,23 +105,23 @@ def quantize_linear(
     )
 
     if Granularity.PerChannel == granularity and "dim" in additional_parameters:
-        (s, z) = get_scale_and_zero(
-            tensor, data_type, mode, additional_parameters["dim"]
-        )
+        dim = additional_parameters["dim"]
+        (s, z) = get_scale_and_zero(tensor, data_type, mode, dim)
+        scale_shape = [1] * tensor.dim()
+        scale_shape[dim] = -1
+        s = s.view(scale_shape)
     else:
         (s, z) = get_scale_and_zero(tensor, data_type, mode)
     # r/s - z = q
     rounded_tensor = t_round(tensor / s - z)
 
-    d_info = finfo(data_type)
+    d_info = get_info(data_type)
     d_min, d_max = d_info.min, d_info.max
 
     return (rounded_tensor.clamp(d_min, d_max).to(data_type), s, z)
 
 
 def dequantize_linear(
-    tensor: Tensor,
-    with_scale_and_zero: Tuple[float, int],
+    tensor: Tensor, scale: FloatOrTensor, zero: IntOrTensor
 ) -> Tensor:
-    (s, z) = with_scale_and_zero
-    return s * (tensor.float() - z)
+    return scale * (tensor.float() - zero)
