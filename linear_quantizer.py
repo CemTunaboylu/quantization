@@ -90,9 +90,7 @@ def group(tensor: Tensor, by: int) -> Tuple[Tensor, Callable]:
 # in symmetric mode, for float8 compression with float16 scale tensors and group size 32,
 # the compression rate has additional memory load of 16/32 = 0.5 coming from scales for each group.
 def get_info(data_type):
-    return (
-        iinfo(data_type) if isinstance(data_type, t_int.__class__) else finfo(data_type)
-    )
+    return finfo(data_type) if data_type.is_floating_point else iinfo(data_type)
 
 
 # r = s(q-z), finds and returns s and z
