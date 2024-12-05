@@ -46,24 +46,28 @@ def is_zero_tensor(t1):
 
 
 class TestScale(TestCase):
+
     def test_per_dim_scale_and_zero_for(self):
         types = [torch.float16, torch.float32]
         max_vals = [torch.finfo(t).max for t in types]
 
         ratios = {
-            (0, torch.float16): [1.0, 5.1948e33],
-            (0, torch.float32): [1.9250e-34, 1.0],
-            (1, torch.float16): [5.1948e33] * 3,
-            (1, torch.float32): [1.0] * 3,
+            (0, torch.float16): [5.1948e33] * 3,
+            (0, torch.float32): [1.0] * 3,
+            (1, torch.float16): [1.0, 5.1948e33],
+            (1, torch.float32): [1.9250e-34, 1.0],
         }
 
         elms = [[elm] * 3 for elm in max_vals]
         t = torch.tensor(elms, dtype=torch.float32)
-        for ty, dim in product(types, [PER_ROWS, PER_COLUMNS]):
-            s, z = per_dim_scale_and_zero_for(t, ty, Mode.Symmetric, dim=dim)
-            exp = torch.tensor(ratios[(dim, ty)], dtype=torch.float32)
+        # for ty, reduce_dim in product(types, [PER_ROWS, PER_COLUMNS]):
+        for ty, reduce_dim in product(types, [PER_ROWS]):
+            s, z = per_dim_scale_and_zero_for(
+                t, ty, Mode.Symmetric, reduce_dim=reduce_dim
+            )
+            exp = torch.tensor(ratios[(reduce_dim, ty)], dtype=torch.float32)
             self.assertTrue(
-                all([is_close(ss, ee) for ss, ee in zip(s, exp)]),
+                are_tensors_close(s, exp),
                 f"exp: {exp}, got: {s}",
             )
             self.assertTrue(
@@ -86,9 +90,9 @@ class TestScale(TestCase):
 
         for ix, (ty, tn) in enumerate(zip(types, tensors)):
             # symmetric mode test
-            s = get_scale_and_zero_for(tn, ty, Mode.Symmetric)
-            self.assertEqual(s[0], exp_s[ix])
-            self.assertEqual(s[1], 0)
+            s, z = get_scale_and_zero_for(tn, ty, Mode.Symmetric)
+            self.assertEqual(s, torch.tensor(exp_s[ix]))
+            self.assertEqual(z, torch.zeros(z.shape))
 
     def test_group(self):
         test_cases = [

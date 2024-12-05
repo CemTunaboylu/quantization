@@ -3,8 +3,8 @@ from functools import partial
 
 from torch import Tensor, dtype, finfo, iinfo, zeros
 from torch import round as t_round
+from torch import clamp as t_clamp
 from torch import float32, int32
-from torch import int as t_int
 
 from typing import Callable, List, Tuple, Union
 
@@ -47,26 +47,22 @@ class QuantizationParameters:
     dim: Union[int, None] = None
 
 
-PER_ROWS = 0
-PER_COLUMNS = 1
+PER_COLUMNS = 0
+PER_ROWS = 1
 
 
 def per_dim_scale_and_zero_for(
-    tensor: Tensor, data_type: dtype, mode: Mode, dim: int = PER_ROWS
+    tensor: Tensor, data_type: dtype, mode: Mode, reduce_dim: int = PER_ROWS
 ) -> Tuple[Tensor, Tensor]:
     shape = tensor.shape
-    if dim >= len(shape) or dim < 0:
-        raise Exception(f"dimension is out of bounds, not in 0 < {dim} < {len(shape)}")
-    zeroes = zeros(shape[dim]).to(int32)
-    scales = zeros(shape[dim]).to(float32)
-    for i in range(shape[dim]):
-        sz: Tuple[float, int] = get_scale_and_zero_for(
-            tensor.select(dim, i), data_type, mode
+    if reduce_dim >= len(shape) or reduce_dim < 0:
+        raise Exception(
+            f"dimension is out of bounds, not in 0 < {reduce_dim} < {len(shape)}"
         )
-        scales[i] = sz[0]
-        zeroes[i] = sz[1]
-
-    return scales, zeroes
+    sz: Tuple[Tensor, Tensor] = get_scale_and_zero_for(
+        tensor, data_type, mode, reduce_dim=reduce_dim
+    )
+    return sz
 
 
 # returns the grouped tensor and the ungroup function
@@ -84,73 +80,72 @@ def group(tensor: Tensor, by: int) -> Tuple[Tensor, Callable]:
     return tensor.view(-1, by), ungroup
 
 
-# finds and returns s and z for each group in the tensor. The compression rate depends on the group size and the mode
-# in symmetric mode, for float8 compression with float16 scale tensors and group size 32,
-# the compression rate has additional memory load of 16/32 = 0.5 coming from scales for each group.
 def get_info(data_type):
     return finfo(data_type) if data_type.is_floating_point else iinfo(data_type)
 
 
 # r = s(q-z), finds and returns s and z
 def get_scale_and_zero_for(
-    tensor: Tensor, data_type: dtype, mode: Mode
-) -> Tuple[float, int]:
+    tensor: Tensor,
+    data_type: dtype,
+    mode: Mode,
+    reduce_dim: None | int = None,
+) -> Tuple[Tensor, Tensor]:
     dtype_info = get_info(data_type)
     r_max, q_max = None, dtype_info.max
+
     match mode:
         case Mode.Symmetric:
-            r_max = tensor.abs().max().item()
+            if not reduce_dim:
+                r_max = tensor.abs().max()
+            else:
+                r_max = tensor.abs().amax(dim=reduce_dim, keepdim=True)
         case Mode.Asymmetric:
-            r_max = tensor.max().item() - tensor.min().item()
+            if not reduce_dim:
+                r_max = tensor.max() - tensor.min()
+            else:
+                r_max = tensor.amax(dim=reduce_dim) - tensor.amin(dim=reduce_dim)
             q_max -= dtype_info.min
 
-    scale = r_max / q_max
+    # scale, zero = (r_max / q_max).to(float32), zeros([1] if not axis else r_max.shape)
+    scale, zero = (r_max / q_max).to(float32), zeros(r_max.shape)
 
-    zero = 0
     if Mode.Asymmetric == mode.value:
-        zero = int(round(r_max / scale - q_max))
-        zero = clamp(zero, dtype_info.min, dtype_info.max)
+        zero = t_round(r_max / scale - q_max).to(int32)
+        zero = t_clamp(zero, dtype_info.min, dtype_info.max)
 
     return scale, zero
 
 
-def clamp(val, _min, _max):
-    return min(max(val, _min), _max)
-
-
+# The compression rate depends on the group size and the mode in symmetric mode,
+# for float8 compression with float16 scale tensors and group size 32,
+# the compression rate has additional memory load of 16/32 = 0.5 coming from scales for each group.
 def quantize_linear(
     tensor: Tensor,
     data_type: dtype,
     granularity: Granularity,
-    mode: Mode,
+    mode: Mode = Mode.Symmetric,
 ) -> Tuple[Tensor, QuantizationParameters]:
-    ungroup, dim, multi_dim = None, None, True
     q_params = partial(
         QuantizationParameters,
         mode=mode,
         granularity=granularity,
     )
-    scale_and_zero_for: Callable
+    func_scale_and_zero_for: Callable
+    ungroup, dim, group_by = None, None, None
     match granularity:
         case Granularity.PerTensor:
-            scale_and_zero_for = partial(get_scale_and_zero_for)
-            multi_dim = False
+            func_scale_and_zero_for = get_scale_and_zero_for
         case Granularity.PerDimension(dim):
-            scale_and_zero_for = partial(per_dim_scale_and_zero_for, dim=dim)
-            q_params = partial(q_params, dim=dim)
-        case Granularity.PerGroup(by, dim):
-            scale_and_zero_for = partial(per_dim_scale_and_zero_for, dim=dim)
-            tensor, ungroup = group(tensor, by)
-            q_params = partial(q_params, dim=dim, group_by=by)
+            func_scale_and_zero_for = per_dim_scale_and_zero_for
+        case Granularity.PerGroup(group_by, dim):
+            func_scale_and_zero_for = per_dim_scale_and_zero_for
+            tensor, ungroup = group(tensor, group_by)
         case _:
-            print(f"g: {granularity}")
+            raise Exception(f"Granularity {granularity} is not implemented")
 
-    (s, z) = scale_and_zero_for(tensor, data_type, mode)
-    if multi_dim:
-        scale_shape = [1] * tensor.dim()
-        scale_shape[dim] = -1
-        s = s.view(scale_shape)
-        z = z.view(scale_shape)
+    q_params = partial(q_params, dim=dim, group_by=group_by)
+    (s, z) = func_scale_and_zero_for(tensor, data_type, mode, reduce_dim=dim)
 
     # r/s - z = q
     rounded_tensor = t_round(tensor / s - z)
