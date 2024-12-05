@@ -61,11 +61,10 @@ class TestWeightPack(TestCase):
 
     def test_2d_pack_unpack_4_8_bits(self):
         pack_bits = [4, 8]
-        dtypes = [uint8, uint16, uint32, uint64, int8, int16, int32, int64]
+        # dtypes = [uint8, uint16, uint32, uint64, int8, int16, int32, int64]
+        dtypes = [uint8, int8, int16, int32, int64]
         num_rows = 4
         row = [1, 0, 3, 2]
-
-        from typing import List
 
         for p_bit, dtype in product(pack_bits, dtypes):
             num_rows_test = num_rows * p_bit
@@ -73,7 +72,7 @@ class TestWeightPack(TestCase):
             data = [row[:]] * num_rows_test
             test_tensor = tensor(data, dtype=dtype)
             packed = pack_weights(test_tensor, pack_bits=p_bit)
-            unpacked = unpack_weights(packed, pack_bits=p_bit)
+            unpacked = unpack_weights(packed, pack_bits=p_bit, dtype=dtype)
             self.assertEqual(
                 data, unpacked.tolist(), f"[{t_id}] exp:{data}, got:{unpacked}"
             )

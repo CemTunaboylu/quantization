@@ -5,7 +5,7 @@ from torch import (
     tensor,
     bitwise_or,
 )
-from torch import uint8, uint16, uint32, uint64
+from torch import uint8, uint16, uint32, uint64, iinfo
 
 from typing import Callable, Generator, List
 from functools import reduce
@@ -73,7 +73,7 @@ def unpack_weights(
     packed: Tensor,
     pack_bits: int,
     ensure_methods: List[Callable] = [],
-    dtype=None,
+    dtype=uint8,
 ) -> Tensor:
     [e(packed, pack_bits) for e in ensure_methods]
 
@@ -156,9 +156,6 @@ def unpack_loop(
     if 0 == to_unpack_num_rows:
         return empty([])
 
-    if None == dtype:
-        pass
-
     num_weights_to_unpack = num_bits // pack_bits
 
     bits_to_move = bit_shifts(num_weights_to_unpack, pack_bits, dtype)
@@ -166,10 +163,14 @@ def unpack_loop(
     unpacked: Tensor = empty(
         [to_unpack_num_rows * num_weights_to_unpack, to_unpack_num_cols], dtype=dtype
     )
-    and_with = tensor(data=[(1 << pack_bits) - 1], dtype=dtype).expand(
+    and_with = tensor(
+        data=[min(iinfo(dtype).max, (1 << pack_bits) - 1)], dtype=dtype
+    ).expand(
         num_weights_to_unpack,
         to_unpack_num_cols,
     )
+
+    to_unpack_2d = to_unpack_2d.to(dtype)
 
     ranges = create_ranges(to_unpack_num_rows, num_weights_to_unpack)
     for r in range(to_unpack_num_rows):
