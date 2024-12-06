@@ -165,10 +165,9 @@ class TestScale(TestCase):
             group_by, dim = None, None
             match g:
                 case Granularity.PerDimension(dim):
-                    dim = dim
-                case Granularity.PerGroup(by, dim):
-                    group_by = by
-                    dim = dim
+                    pass
+                case Granularity.PerGroup(group_by, dim):
+                    pass
             self.assertTrue(
                 are_tensors_close(
                     qt,
