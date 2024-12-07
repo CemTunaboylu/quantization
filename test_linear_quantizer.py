@@ -45,7 +45,7 @@ def is_zero_tensor(t1):
     return is_tensor_with_same_element(t1, 0.0)
 
 
-class TestScale(TestCase):
+class TestLinearQuantizer(TestCase):
 
     def test_per_dim_scale_and_zero_for(self):
         types = [torch.float16, torch.float32]
