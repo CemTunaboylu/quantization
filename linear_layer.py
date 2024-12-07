@@ -6,7 +6,7 @@ from torch import round as t_round
 
 from torch.functional import F
 
-from typing import Any, Protocol
+from typing import Type, Protocol
 
 from rust_enum import enum, Case
 
@@ -32,17 +32,21 @@ class Target:
     Linear = Case(kwarged=LinearLayerKeywordedConstructor)
 
 
+def _linear(child: nn.Linear, target_class: Type):
+    return target_class(
+        in_features=child.in_features,
+        out_features=child.out_features,
+        bias=child.bias is not None,
+        dtype=child.weight.dtype,
+    )
+
+
 def target_class_from(child: nn.Module, target_class: Target) -> nn.Module:
     target_class_constructor: LinearLayerKeywordedConstructor
     new_module: nn.Module
     match target_class:
         case Target.Linear(target_class_constructor):
-            new_module = target_class_constructor(
-                in_features=child.in_features,
-                out_features=child.out_features,
-                bias=child.bias is not None,
-                dtype=child.weight.dtype,
-            )
+            new_module = _linear(child, target_class_constructor)
         case _:
             raise NotImplemented(f"{target_class}")
 
