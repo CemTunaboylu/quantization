@@ -243,7 +243,3 @@ if __name__ == "__main__":
         print(
             f"- {f.__name__}  {icons[int(result)]}",
         )
-
-    # TODO: use other models as well, and move these into test_ file.
-    # from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
-    # model = "Salesforce/codegen-350M-mono"
