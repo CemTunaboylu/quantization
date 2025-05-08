@@ -1,14 +1,13 @@
-from linear_quantizer import *
-from linear_layer import *
-
 import torch
 import sys
 
 from functools import partial
 from itertools import product
 
-DEBUG = False
+from linear_quantizer import *
+from linear_layer import *
 
+DEBUG = False
 
 def debugger(*args, name: str = ""):
     if not DEBUG:

@@ -1,3 +1,6 @@
+from functools import reduce
+from typing import Callable, Generator, List
+
 from torch import (
     empty,
     Tensor,
@@ -7,11 +10,7 @@ from torch import (
 )
 from torch import uint8, uint16, uint32, uint64, iinfo
 
-from typing import Callable, Generator, List
-from functools import reduce
-
 MIN_TO_PACK = 4
-
 
 def check_smaller_than_min_to_pack(num_bits: int):
     if num_bits < MIN_TO_PACK:

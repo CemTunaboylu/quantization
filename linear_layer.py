@@ -1,15 +1,13 @@
 from functools import partial
+from typing import Type, Protocol
+
 from torch import bfloat16, nn, dtype
 from torch import int8, float32, Tensor, iinfo
 from torch import randn, randint
 from torch import round as t_round
-
 from torch.functional import F
 
-from typing import Type, Protocol
-
 from rust_enum import enum, Case
-
 
 def quantized_forward(weights, input: Tensor, scales, bias=None):
     casted_weights = weights.to(dtype=input.dtype)

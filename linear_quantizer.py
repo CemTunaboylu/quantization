@@ -1,21 +1,18 @@
 from dataclasses import dataclass
+from enum import Enum
 from functools import partial
+from typing import Callable, List, Tuple, Union
 
 from torch import Tensor, dtype, finfo, iinfo, zeros
 from torch import round as t_round
 from torch import clamp as t_clamp
 from torch import float32, int32
 
-from typing import Callable, List, Tuple, Union
-
 from rust_enum import enum, Case
-from enum import Enum
-
 
 class Mode(Enum):
     Symmetric = False
     Asymmetric = True
-
 
 @enum
 class Granularity:
@@ -35,7 +32,6 @@ class Granularity:
 
 FloatOrTensor = Union[float, Tensor]
 IntOrTensor = Union[int, Tensor]
-
 
 @dataclass
 class QuantizationParameters:
